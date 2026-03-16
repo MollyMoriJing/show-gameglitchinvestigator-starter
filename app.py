@@ -1,69 +1,6 @@
 import random
 import streamlit as st
-
-def get_range_for_difficulty(difficulty: str):
-    if difficulty == "Easy":
-        return 1, 20
-    if difficulty == "Normal":
-        return 1, 100
-    if difficulty == "Hard":
-        # FIX: Changed from (1, 50) to (1, 200) - Hard now has larger range than Normal
-        return 1, 200
-    return 1, 100
-
-
-def parse_guess(raw: str):
-    if raw is None:
-        return False, None, "Enter a guess."
-
-    if raw == "":
-        return False, None, "Enter a guess."
-
-    try:
-        if "." in raw:
-            value = int(float(raw))
-        else:
-            value = int(raw)
-    except Exception:
-        return False, None, "That is not a number."
-
-    return True, value, None
-
-
-def check_guess(guess, secret):
-    if guess == secret:
-        return "Win", "🎉 Correct!"
-
-    try:
-        if guess > secret:
-            return "Too High", "📈 Go HIGHER!"
-        else:
-            return "Too Low", "📉 Go LOWER!"
-    except TypeError:
-        g = str(guess)
-        if g == secret:
-            return "Win", "🎉 Correct!"
-        if g > secret:
-            return "Too High", "📈 Go HIGHER!"
-        return "Too Low", "📉 Go LOWER!"
-
-
-def update_score(current_score: int, outcome: str, attempt_number: int):
-    if outcome == "Win":
-        points = 100 - 10 * (attempt_number + 1)
-        if points < 10:
-            points = 10
-        return current_score + points
-
-    if outcome == "Too High":
-        if attempt_number % 2 == 0:
-            return current_score + 5
-        return current_score - 5
-
-    if outcome == "Too Low":
-        return current_score - 5
-
-    return current_score
+from logic_utils import get_range_for_difficulty, parse_guess, check_guess, update_score
 
 st.set_page_config(page_title="Glitchy Guesser", page_icon="🎮")
 
@@ -78,10 +15,11 @@ difficulty = st.sidebar.selectbox(
     index=1,
 )
 
+# FIX: Attempt limits now scale with range — Hard gets more attempts than Easy
 attempt_limit_map = {
-    "Easy": 6,
-    "Normal": 8,
-    "Hard": 5,
+    "Easy": 7,    # range 1-20,  ~5 guesses optimal
+    "Normal": 10, # range 1-100, ~7 guesses optimal
+    "Hard": 12,   # range 1-200, ~8 guesses optimal
 }
 attempt_limit = attempt_limit_map[difficulty]
 
@@ -90,11 +28,24 @@ low, high = get_range_for_difficulty(difficulty)
 st.sidebar.caption(f"Range: {low} to {high}")
 st.sidebar.caption(f"Attempts allowed: {attempt_limit}")
 
+# FIX: Detect difficulty change and reset entire game state so secret stays in range
+if "difficulty" not in st.session_state:
+    st.session_state.difficulty = difficulty
+
+if st.session_state.difficulty != difficulty:
+    st.session_state.difficulty = difficulty
+    st.session_state.secret = random.randint(low, high)
+    st.session_state.attempts = 0
+    st.session_state.score = 0
+    st.session_state.status = "playing"
+    st.session_state.history = []
+
 if "secret" not in st.session_state:
     st.session_state.secret = random.randint(low, high)
 
 if "attempts" not in st.session_state:
-    st.session_state.attempts = 1
+    # FIX: Initialize to 0, not 1 — was causing off-by-one display error
+    st.session_state.attempts = 0
 
 if "score" not in st.session_state:
     st.session_state.score = 0
@@ -134,7 +85,11 @@ with col3:
 
 if new_game:
     st.session_state.attempts = 0
-    st.session_state.secret = random.randint(1, 100)
+    # FIX: Use difficulty-based range instead of hardcoded (1, 100)
+    st.session_state.secret = random.randint(low, high)
+    st.session_state.score = 0
+    st.session_state.status = "playing"
+    st.session_state.history = []
     st.success("New game started.")
     st.rerun()
 
@@ -146,45 +101,45 @@ if st.session_state.status != "playing":
     st.stop()
 
 if submit:
-    st.session_state.attempts += 1
-
     ok, guess_int, err = parse_guess(raw_guess)
 
     if not ok:
-        st.session_state.history.append(raw_guess)
         st.error(err)
     else:
-        st.session_state.history.append(guess_int)
-
-        # FIX: Removed type conversion that was breaking comparisons on even attempts
-        secret = st.session_state.secret
-
-        outcome, message = check_guess(guess_int, secret)
-
-        if show_hint:
-            st.warning(message)
-
-        st.session_state.score = update_score(
-            current_score=st.session_state.score,
-            outcome=outcome,
-            attempt_number=st.session_state.attempts,
-        )
-
-        if outcome == "Win":
-            st.balloons()
-            st.session_state.status = "won"
-            st.success(
-                f"You won! The secret was {st.session_state.secret}. "
-                f"Final score: {st.session_state.score}"
-            )
+        # FIX: Validate guess is within range; reject out-of-range without consuming an attempt
+        if guess_int < low or guess_int > high:
+            st.error(f"Out of range! Please enter a number between {low} and {high}.")
         else:
-            if st.session_state.attempts >= attempt_limit:
-                st.session_state.status = "lost"
-                st.error(
-                    f"Out of attempts! "
-                    f"The secret was {st.session_state.secret}. "
-                    f"Score: {st.session_state.score}"
+            st.session_state.attempts += 1
+            st.session_state.history.append(guess_int)
+
+            # FIX: Always use integer secret — removed str() conversion that broke even attempts
+            outcome, message = check_guess(guess_int, st.session_state.secret)
+
+            if show_hint:
+                st.warning(message)
+
+            st.session_state.score = update_score(
+                current_score=st.session_state.score,
+                outcome=outcome,
+                attempt_number=st.session_state.attempts,
+            )
+
+            if outcome == "Win":
+                st.balloons()
+                st.session_state.status = "won"
+                st.success(
+                    f"You won! The secret was {st.session_state.secret}. "
+                    f"Final score: {st.session_state.score}"
                 )
+            else:
+                if st.session_state.attempts >= attempt_limit:
+                    st.session_state.status = "lost"
+                    st.error(
+                        f"Out of attempts! "
+                        f"The secret was {st.session_state.secret}. "
+                        f"Score: {st.session_state.score}"
+                    )
 
 st.divider()
 st.caption("Built by an AI that claims this code is production-ready.")

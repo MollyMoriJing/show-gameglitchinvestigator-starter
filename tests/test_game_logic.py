@@ -1,44 +1,45 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logic_utils import check_guess, get_range_for_difficulty
 
-from app import check_guess, get_range_for_difficulty
 
 def test_winning_guess():
     # If the secret is 50 and guess is 50, it should be a win
     outcome, message = check_guess(50, 50)
     assert outcome == "Win"
 
+
 def test_guess_too_high():
-    # If secret is 50 and guess is 60, hint should be "Too High"
+    # Guessing 60 when secret is 50: outcome Too High, hint says Go LOWER
     outcome, message = check_guess(60, 50)
     assert outcome == "Too High"
+    assert "LOWER" in message
+
 
 def test_guess_too_low():
-    # If secret is 50 and guess is 40, hint should be "Too Low"
+    # Guessing 40 when secret is 50: outcome Too Low, hint says Go HIGHER
     outcome, message = check_guess(40, 50)
     assert outcome == "Too Low"
+    assert "HIGHER" in message
+
 
 def test_hard_difficulty_has_larger_range():
-    # FIX: Hard should have larger range than Normal
-    easy_low, easy_high = get_range_for_difficulty("Easy")
-    normal_low, normal_high = get_range_for_difficulty("Normal")
-    hard_low, hard_high = get_range_for_difficulty("Hard")
+    # Difficulty ranges must scale: Easy < Normal < Hard
+    _, easy_high = get_range_for_difficulty("Easy")
+    _, normal_high = get_range_for_difficulty("Normal")
+    _, hard_high = get_range_for_difficulty("Hard")
 
-    assert easy_high == 20, "Easy should be 1-20"
-    assert normal_high == 100, "Normal should be 1-100"
-    assert hard_high == 200, "Hard should be 1-200 (larger than Normal)"
-    assert hard_high > normal_high, "Hard range should be larger than Normal"
+    assert easy_high == 20
+    assert normal_high == 100
+    assert hard_high == 200
+    assert hard_high > normal_high > easy_high
 
-def test_secret_consistency_with_integer():
-    # FIX: Secret should always be integer, not converted to string
-    secret = 42
-    guess = 50
 
-    # Guess should work consistently with integer secret
-    outcome, message = check_guess(guess, secret)
-    assert outcome == "Too High", "Integer comparison should work correctly"
+def test_guess_comparison_uses_integers():
+    # check_guess must handle all three outcomes with integer inputs
+    outcome_high, _ = check_guess(50, 42)
+    assert outcome_high == "Too High"
 
-    # Even with string representation in intermediate steps, integer secret should stay consistent
-    outcome2, message2 = check_guess(40, secret)
-    assert outcome2 == "Too Low", "Integer secret should work on second attempt too"
+    outcome_low, _ = check_guess(30, 42)
+    assert outcome_low == "Too Low"
+
+    outcome_win, _ = check_guess(42, 42)
+    assert outcome_win == "Win"
